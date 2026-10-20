@@ -1,0 +1,642 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>RDS Proxy | AWSデータベース接続最適化</title>
+  <meta name="description" content="RDS Proxy の概要、仕組み、メリット、使いどころ、導入例をわかりやすくまとめたサイトです。" />
+  <style>
+    :root{
+      --bg:#0b1020;
+      --panel:#121b2d;
+      --panel-2:#1a2741;
+      --text:#edf2ff;
+      --muted:#b8c3df;
+      --primary:#5aa9ff;
+      --accent:#7ee7c8;
+      --warning:#ffcc70;
+      --danger:#ff8b8b;
+      --shadow:0 18px 40px rgba(0,0,0,0.22);
+      --radius:18px;
+      --container:1180px;
+    }
+
+    * { box-sizing: border-box; }
+    html { scroll-behavior: smooth; }
+    body {
+      margin: 0;
+      font-family: "Segoe UI", "Hiragino Sans", "Yu Gothic", sans-serif;
+      background: linear-gradient(180deg, #0b1020 0%, #0d1324 100%);
+      color: var(--text);
+      line-height: 1.7;
+    }
+
+    a { color: inherit; text-decoration: none; }
+    img { max-width: 100%; display: block; }
+
+    .container { width: min(var(--container), calc(100% - 32px)); margin: 0 auto; }
+
+    header {
+      position: sticky;
+      top: 0;
+      z-index: 20;
+      backdrop-filter: blur(10px);
+      background: rgba(11, 16, 32, 0.72);
+      border-bottom: 1px solid rgba(255,255,255,0.08);
+    }
+
+    .nav {
+      display: flex; align-items: center; justify-content: space-between;
+      min-height: 72px;
+    }
+
+    .brand {
+      display: flex; align-items: center; gap: 12px; font-weight: 700; letter-spacing: 0.03em;
+    }
+
+    .brand-mark {
+      width: 38px; height: 38px; border-radius: 12px;
+      display: grid; place-items: center;
+      background: linear-gradient(135deg, var(--primary), var(--accent));
+      color: #04131d; font-weight: 900;
+      box-shadow: var(--shadow);
+    }
+
+    .nav-links {
+      display: flex; gap: 22px; color: var(--muted); font-size: 0.96rem;
+    }
+
+    .nav-links a:hover { color: var(--text); }
+
+    .cta {
+      display: inline-flex; align-items: center; justify-content: center;
+      padding: 0.9rem 1.4rem; border-radius: 999px;
+      background: linear-gradient(135deg, var(--primary), #7d82ff);
+      color: white; font-weight: 700; box-shadow: var(--shadow);
+      transition: transform 0.2s ease;
+    }
+
+    .cta:hover { transform: translateY(-1px); }
+
+    .hero {
+      padding: 88px 0 72px;
+      position: relative;
+      overflow: hidden;
+    }
+
+    .hero::before {
+      content: "";
+      position: absolute; inset: 0; 
+      background:
+        radial-gradient(circle at 20% 20%, rgba(90,169,255,0.34), transparent 30%),
+        radial-gradient(circle at 80% 0%, rgba(126,231,200,0.18), transparent 30%);
+      pointer-events: none;
+    }
+
+    .hero-grid {
+      display: grid; grid-template-columns: 1.2fr 0.8fr; gap: 42px;
+      align-items: center; position: relative; z-index: 1;
+    }
+
+    .eyebrow {
+      display: inline-flex; align-items: center; gap: 8px;
+      padding: 0.4rem 0.8rem; border-radius: 999px;
+      background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.12);
+      color: var(--accent); font-weight: 600; font-size: 0.82rem; letter-spacing: 0.05em;
+    }
+
+    h1 {
+      margin: 18px 0 16px; font-size: clamp(2.6rem, 5vw, 5rem); line-height: 1.06; letter-spacing: -0.05em;
+    }
+
+    .lead {
+      font-size: 1.08rem; color: var(--muted); max-width: 680px;
+    }
+
+    .hero-actions {
+      display: flex; flex-wrap: wrap; gap: 14px; margin-top: 28px;
+    }
+
+    .ghost {
+      background: rgba(255,255,255,0.04);
+      border: 1px solid rgba(255,255,255,0.12);
+      color: var(--text);
+      box-shadow: none;
+    }
+
+    .stats {
+      display: flex; flex-wrap: wrap; gap: 18px; margin-top: 34px;
+    }
+
+    .stat {
+      min-width: 140px; padding: 18px 20px; border-radius: 14px;
+      background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.08);
+    }
+
+    .stat strong { font-size: 1.5rem; display: block; }
+    .stat span { color: var(--muted); font-size: 0.9rem; }
+
+    .hero-visual {
+      background: linear-gradient(180deg, rgba(255,255,255,0.03), rgba(255,255,255,0.02));
+      border: 1px solid rgba(255,255,255,0.08);
+      border-radius: 28px;
+      padding: 20px;
+      box-shadow: var(--shadow);
+    }
+
+    .panel {
+      background: rgba(17, 24, 40, 0.9);
+      border: 1px solid rgba(255,255,255,0.08);
+      border-radius: 20px;
+      padding: 22px;
+    }
+
+    .db-arch {
+      position: relative;
+      display: grid;
+      gap: 14px;
+      padding: 18px;
+      min-height: 420px;
+      background:
+        linear-gradient(180deg, rgba(90,169,255,0.08), rgba(126,231,200,0.04)),
+        rgba(10,15,26,0.6);
+      border-radius: 20px;
+      overflow: hidden;
+    }
+
+    .db-arch::before {
+      content: "";
+      position: absolute;
+      inset: 30px 20px 30px 20px;
+      border: 1px solid rgba(126,231,200,0.25);
+      border-radius: 18px;
+    }
+
+    .node {
+      position: relative;
+      z-index: 1;
+      display: flex; align-items: center; justify-content: center;
+      border-radius: 16px;
+      font-weight: 700;
+      text-align: center;
+      padding: 16px 12px;
+      border: 1px solid rgba(255,255,255,0.08);
+    }
+
+    .app { background: rgba(90,169,255,0.15); border-color: rgba(90,169,255,0.35); }
+    .proxy { background: rgba(126,231,200,0.12); border-color: rgba(126,231,200,0.3); }
+    .db { background: rgba(255,204,112,0.12); border-color: rgba(255,204,112,0.28); }
+
+    .db-arch .app { width: 72%; margin-left: auto; }
+    .db-arch .proxy { width: 68%; margin: 0 auto; }
+    .db-arch .db { width: 85%; margin: 0 auto 10px; }
+
+    .db-arch .arrow {
+      position: relative; z-index: 1;
+      display: flex; justify-content: center; color: var(--accent);
+      font-weight: 700; letter-spacing: 0.2em;
+    }
+
+    section {
+      padding: 48px 0;
+    }
+
+    .section-head {
+      display: flex; justify-content: space-between; align-items: end; gap: 20px;
+      margin-bottom: 22px;
+    }
+
+    .section-head h2 {
+      font-size: clamp(2rem, 3vw, 3rem); margin: 0; letter-spacing: -0.04em;
+    }
+
+    .section-head p {
+      margin: 0; color: var(--muted);
+      max-width: 620px;
+    }
+
+    .cards {
+      display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 22px;
+    }
+
+    .card {
+      background: rgba(255,255,255,0.03);
+      border: 1px solid rgba(255,255,255,0.08);
+      border-radius: var(--radius);
+      padding: 24px;
+      box-shadow: var(--shadow);
+    }
+
+    .card-icon {
+      width: 52px; height: 52px; display: grid; place-items: center;
+      border-radius: 14px; font-size: 1.4rem;
+      background: linear-gradient(135deg, rgba(90,169,255,0.2), rgba(126,231,200,0.12));
+      margin-bottom: 16px;
+    }
+
+    .card h3 { margin: 0 0 10px; font-size: 1.28rem; }
+    .card p { margin: 0; color: var(--muted); }
+
+    .two-col {
+      display: grid; grid-template-columns: 1.1fr 0.9fr; gap: 26px;
+      align-items: start;
+    }
+
+    .feature-list {
+      list-style: none; padding: 0; margin: 0;
+      display: grid; gap: 16px;
+    }
+
+    .feature-list li {
+      display: flex; gap: 14px; align-items: flex-start;
+      background: rgba(255,255,255,0.03);
+      border: 1px solid rgba(255,255,255,0.08);
+      border-radius: 16px;
+      padding: 18px 18px;
+    }
+
+    .check {
+      width: 26px; height: 26px; border-radius: 50%;
+      background: linear-gradient(135deg, var(--accent), #5dd5ff);
+      color: #061019; font-weight: 800; display: grid; place-items: center; flex-shrink: 0;
+      margin-top: 2px;
+    }
+
+    .mini-panel {
+      background: linear-gradient(165deg, rgba(90,169,255,0.09), rgba(18,27,45,0.92));
+      border: 1px solid rgba(255,255,255,0.08);
+      border-radius: 22px; padding: 24px; box-shadow: var(--shadow);
+    }
+
+    .mini-panel h3 { margin-top: 0; font-size: 1.3rem; }
+    .mini-panel ul { color: var(--muted); padding-left: 1.2rem; }
+
+    .mg-top { margin-top: 26px; }
+
+    .diagram-grid {
+      display: grid; grid-template-columns: repeat(4, minmax(0,1fr)); gap: 18px;
+      margin-top: 26px;
+    }
+
+    .flow-box {
+      background: rgba(255,255,255,0.04);
+      border: 1px solid rgba(255,255,255,0.08);
+      border-radius: 18px; padding: 18px 16px;
+      text-align: center;
+      font-weight: 700;
+    }
+
+    .flow-box span { display: block; color: var(--muted); font-weight: 500; margin-top: 8px; font-size: 0.9rem; }
+
+    .code-block {
+      background: #0c1422;
+      border: 1px solid rgba(255,255,255,0.08);
+      border-radius: 18px;
+      overflow: hidden;
+      box-shadow: var(--shadow);
+    }
+
+    pre {
+      margin: 0; padding: 20px 18px;
+      overflow-x: auto;
+      color: #dfeaff;
+      font-size: 0.96rem;
+    }
+
+    .token-key { color: #7ee7c8; }
+    .token-string { color: #ffe39a; }
+    .token-attr { color: #9ec5ff; }
+
+    .faq {
+      display: grid; grid-template-columns: repeat(2, minmax(0,1fr)); gap: 18px;
+    }
+
+    .faq-item {
+      background: rgba(255,255,255,0.03);
+      border: 1px solid rgba(255,255,255,0.08);
+      border-radius: 16px; padding: 20px 18px;
+    }
+
+    .faq-item h4 { margin: 0 0 8px; font-size: 1.1rem; }
+    .faq-item p { margin: 0; color: var(--muted); }
+
+    footer {
+      border-top: 1px solid rgba(255,255,255,0.08);
+      padding: 30px 0 52px;
+      color: var(--muted);
+      text-align: center;
+    }
+
+    @media (max-width: 940px) {
+      .hero-grid, .two-col, .cards, .faq, .diagram-grid {
+        grid-template-columns: 1fr;
+      }
+      .nav-links { display: none; }
+      .section-head { display: block; }
+      .section-head p { margin-top: 12px; }
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <div class="container nav">
+      <div class="brand">
+        <div class="brand-mark">R</div>
+        <span>RDS Proxy</span>
+      </div>
+      <nav class="nav-links">
+        <a href="#overview">概要</a>
+        <a href="#benefits">メリット</a>
+        <a href="#how-it-works">仕組み</a>
+        <a href="#use-cases">導入例</a>
+        <a href="#faq">FAQ</a>
+      </nav>
+      <a class="cta" href="#overview">詳細を見る</a>
+    </div>
+  </header>
+
+  <main>
+    <section class="hero">
+      <div class="container hero-grid">
+        <div>
+          <div class="eyebrow">AWS Database Optimization</div>
+          <h1>RDS Proxyで<br/>接続数を軽くし、<br/>アプリをもっと安定させる</h1>
+          <p class="lead">
+            RDS Proxy は、アプリケーションと Amazon RDS 間の接続を効率化し、
+            接続枠の枯渇、データベースの負荷、アプリのスケーリング時の不安定さを抑えるためのサービスです。
+            特に、数百から数千の同時接続を扱うアプリケーションでは大きな効果があります。
+          </p>
+          <div class="hero-actions">
+            <a href="#benefits" class="cta">メリットを見る</a>
+            <a href="#how-it-works" class="cta ghost">仕組みを知る</a>
+          </div>
+          <div class="stats">
+            <div class="stat">
+              <strong>大量接続</strong>
+              <span>同時接続を安定化</span>
+            </div>
+            <div class="stat">
+              <strong>DB負荷軽減</strong>
+              <span>コネクション管理を最適化</span>
+            </div>
+            <div class="stat">
+              <strong>運用効率化</strong>
+              <span>フェイルオーバーに強い</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="hero-visual">
+          <div class="db-arch">
+            <div class="node app">Web App / API</div>
+            <div class="arrow">↓</div>
+            <div class="node proxy">RDS Proxy</div>
+            <div class="arrow">↓</div>
+            <div class="node db">Amazon RDS</div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section id="overview">
+      <div class="container">
+        <div class="section-head">
+          <h2>RDS Proxy とは</h2>
+          <p>
+            アプリケーションから直接データベースへ接続するのではなく、
+            RDS Proxy が接続の管理を担当することで、アプリ側の接続負荷と DB 側の負荷を分散しやすくします。
+          </p>
+        </div>
+
+        <div class="cards">
+          <article class="card">
+            <div class="card-icon">🔗</div>
+            <h3>接続の仲介</h3>
+            <p>
+              アプリがデータベースへ直接接続するのではなく、
+              RDS Proxy を経由して接続を管理します。
+            </p>
+          </article>
+
+          <article class="card">
+            <div class="card-icon">⚙️</div>
+            <h3>接続プール管理</h3>
+            <p>
+              接続の再利用やプール化を行い、同時接続が大量に発生しても
+              データベースへの負荷を抑えます。
+            </p>
+          </article>
+
+          <article class="card">
+            <div class="card-icon">🛡️</div>
+            <h3>運用の安定化</h3>
+            <p>
+              RDS のフェイルオーバーや再起動時にも、アプリ側の接続切断を
+              徐々に吸収しやすくなります。
+            </p>
+          </article>
+        </div>
+      </div>
+    </section>
+
+    <section id="benefits">
+      <div class="container">
+        <div class="section-head">
+          <h2>なぜ使うのか</h2>
+          <p>
+            RDS Proxy は、アプリケーションの規模が大きくなるほど効果が出やすく、
+            特にサーバーレスや自動スケーリングを伴うシステムでの導入価値が高いです。
+          </p>
+        </div>
+
+        <div class="two-col">
+          <ul class="feature-list">
+            <li>
+              <div class="check">✓</div>
+              <div>
+                <strong>接続数制限の緩和</strong><br />
+                RDS の最大接続数に近づいたとき、アプリ側が大量の接続をDBに直接作ってしまうと
+                接続枯渇が起きやすくなります。Proxy で接続を集約できます。
+              </div>
+            </li>
+            <li>
+              <div class="check">✓</div>
+              <div>
+                <strong>DB負荷の平準化</strong><br />
+                接続の作成・破棄が頻繁に行われると DB の処理負荷が高くなりがちです。
+                Proxy によって接続の再利用がしやすくなります。
+              </div>
+            </li>
+            <li>
+              <div class="check">✓</div>
+              <div>
+                <strong>スケーリングに強い</strong><br />
+                Lambda や ECS、EKS のようなスケールアウトな仕組みでは、
+                短時間に大量の接続が発生しやすいです。RDS Proxy がその波を吸収します。
+              </div>
+            </li>
+          </ul>
+
+          <div class="mini-panel">
+            <h3>こんな場面に向いています</h3>
+            <ul>
+              <li>EC2 / ECS / Lambda から RDS に接続するアプリ</li>
+              <li>同時アクセス数が多い Web API</li>
+              <li>接続頻度が高く、DB 接続数がボトルネックになっている案件</li>
+              <li>自動スケーリングを前提としたサービス</li>
+            </ul>
+            <div class="mg-top">
+              <strong>注意点</strong>
+              <p style="color: var(--muted); margin-top: 8px;">
+                RDS Proxy は「すべてのケースに最適」ではなく、
+                低負荷・小規模構成では導入効果が小さいこともあります。
+                まずは接続数や負荷の実測が重要です。
+              </p>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section id="how-it-works">
+      <div class="container">
+        <div class="section-head">
+          <h2>仕組み</h2>
+          <p>
+            アプリケーションは RDS Proxy を通じて接続し、Proxy が本体の RDS との接続を制御します。
+            これは「接続プール」と「経路の仲介」を担う構造です。
+          </p>
+        </div>
+
+        <div class="diagram-grid">
+          <div class="flow-box">アプリ<br /><span>複数の接続要求</span></div>
+          <div class="flow-box">RDS Proxy<br /><span>プールと再利用</span></div>
+          <div class="flow-box">DBコネクション<br /><span>接続を制御</span></div>
+          <div class="flow-box">Amazon RDS<br /><span>SQL実行</span></div>
+        </div>
+
+        <div class="mg-top">
+          <div class="code-block">
+            <pre><code><span class="token-attr">Application</span>  →  <span class="token-key">RDS Proxy</span>  →  <span class="token-string">Amazon RDS</span>
+   1. App が DB に接続要求
+   2. Proxy が接続プールを確認
+   3. 既存接続を再利用 or 新規作成
+   4. SQL 実行を RDS に転送
+   5. 接続を効率よく維持</code></pre>
+          </div>
+        </div>
+
+        <div class="mg-top">
+          <div class="two-col">
+            <div class="mini-panel">
+              <h3>まとめると</h3>
+              <p style="color: var(--muted);">
+                RDS Proxy は「DBへの接続そのものを制御するラッパー」であり、
+                接続数の増加に対してより柔軟に対応できるようにします。
+              </p>
+            </div>
+
+            <div class="mini-panel">
+              <h3>よくある誤解</h3>
+              <p style="color: var(--muted);">
+                「RDS Proxy を入れれば DB の性能が勝手に上がる」と思いがちですが、
+                その本質は「接続数と負荷の管理」をうまくやることです。
+                SQL の高速化そのものではありません。
+              </p>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section id="use-cases">
+      <div class="container">
+        <div class="section-head">
+          <h2>導入例</h2>
+          <p>
+            実運用でよく使われる利用パターンを挙げると、RDS Proxy は
+            スマートな接続管理が必要なアプリに特に効果的です。
+          </p>
+        </div>
+
+        <div class="cards">
+          <article class="card">
+            <div class="card-icon">☁️</div>
+            <h3>サーバーレスアプリ</h3>
+            <p>
+              Lambda やコンテナのスケールアップ時に、瞬間的に大量の接続が発生しやすいため、
+              接続管理が重要になります。
+            </p>
+          </article>
+
+          <article class="card">
+            <div class="card-icon">📈</div>
+            <h3>高トラフィック API</h3>
+            <p>
+              API のリクエスト数が多い環境では、DB 接続数がボトルネックになりやすく、
+              Proxy で平準化できます。
+            </p>
+          </article>
+
+          <article class="card">
+            <div class="card-icon">🧩</div>
+            <h3>複数サービス連携</h3>
+            <p>
+              複数のマイクロサービスやジョブが同じ RDS を共有する時、
+              接続の取り合いが起きやすく、Proxy が緩和します。
+            </p>
+          </article>
+        </div>
+      </div>
+    </section>
+
+    <section id="faq">
+      <div class="container">
+        <div class="section-head">
+          <h2>FAQ</h2>
+          <p>導入時によくある疑問をまとめました。</p>
+        </div>
+
+        <div class="faq">
+          <article class="faq-item">
+            <h4>RDS Proxy は必須ですか？</h4>
+            <p>
+              必須ではありません。小規模で接続数が少ない場合は、直接 RDS に接続しても十分なことが多いです。
+            </p>
+          </article>
+
+          <article class="faq-item">
+            <h4>RDS Proxy は MySQL / PostgreSQL に対応していますか？</h4>
+            <p>
+              主要な Aurora / RDS で利用できますが、対応するエンジンや機能には制約があるため、
+              公式ドキュメントで確認すると安全です。
+            </p>
+          </article>
+
+          <article class="faq-item">
+            <h4>コストは高くなりますか？</h4>
+            <p>
+              追加のプロキシ料金が発生します。接続数が多く、安定性が重要なケースでは
+              総合的な運用コストの削減効果を期待できます。
+            </p>
+          </article>
+
+          <article class="faq-item">
+            <h4>RDS Proxy は SQL の高速化をしますか？</h4>
+            <p>
+              直接的には SQL 自体の高速化ではなく、接続管理の最適化によって
+              結果として負荷を軽くし、安定性を高めるサービスです。
+            </p>
+          </article>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <footer>
+    <div class="container">
+      RDS Proxy まとめサイト © 2026
+    </div>
+  </footer>
+</body>
+</html>
